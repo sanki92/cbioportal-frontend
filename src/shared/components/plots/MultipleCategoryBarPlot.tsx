@@ -80,6 +80,7 @@ const DEFAULT_BOTTOM_PADDING = 10;
 const LEGEND_ITEMS_PER_ROW = 4;
 const BOTTOM_LEGEND_PADDING = 15;
 const RIGHT_PADDING_FOR_LONG_LABELS = 50;
+const MAX_DATA_POINTS_FOR_RENDERING = 5000;
 
 @observer
 export default class MultipleCategoryBarPlot extends React.Component<
@@ -100,6 +101,7 @@ export default class MultipleCategoryBarPlot extends React.Component<
     private legendClassName: string = `stacked-bar-plot-legend-${Math.random()}`;
     @observable computedLegendWidth = 0;
     @observable mousePosition = { x: 0, y: 0 };
+    @observable isDataDownsampled = false;
 
     @observable.ref private container: HTMLDivElement;
 
@@ -280,7 +282,46 @@ export default class MultipleCategoryBarPlot extends React.Component<
         } else if (this.props.plotData) {
             data = this.props.plotData;
         }
-        return data;
+        return this.downsampleDataIfNeeded(data);
+    }
+
+    private downsampleDataIfNeeded(
+        data: IMultipleCategoryBarPlotData[]
+    ): IMultipleCategoryBarPlotData[] {
+        const totalDataPoints = data.reduce(
+            (sum, item) => sum + item.counts.length,
+            0
+        );
+
+        if (totalDataPoints <= MAX_DATA_POINTS_FOR_RENDERING) {
+            this.isDataDownsampled = false;
+            return data;
+        }
+
+        this.isDataDownsampled = true;
+
+        const targetPointsPerCategory = Math.floor(
+            MAX_DATA_POINTS_FOR_RENDERING / Math.max(data.length, 1)
+        );
+
+        return data.map(item => {
+            if (item.counts.length <= targetPointsPerCategory) {
+                return item;
+            }
+
+            const step = item.counts.length / targetPointsPerCategory;
+            const downsampledCounts = [];
+
+            for (let i = 0; i < targetPointsPerCategory; i++) {
+                const index = Math.floor(i * step);
+                downsampledCounts.push(item.counts[index]);
+            }
+
+            return {
+                minorCategory: item.minorCategory,
+                counts: downsampledCounts,
+            };
+        });
     }
 
     @computed get maxMajorCount() {
@@ -954,6 +995,18 @@ export default class MultipleCategoryBarPlot extends React.Component<
         }
         return (
             <div>
+                {this.isDataDownsampled && (
+                    <div
+                        className={'alert alert-warning'}
+                        style={{ marginBottom: 10 }}
+                    >
+                        <i className="fa fa-info-circle" /> The plot is showing
+                        a subset of data points (limited to{' '}
+                        {MAX_DATA_POINTS_FOR_RENDERING}) to maintain
+                        performance. The full dataset is still available in the
+                        table view.
+                    </div>
+                )}
                 <Observer>{this.getChart}</Observer>
                 {this.tooltipComponent}
             </div>
